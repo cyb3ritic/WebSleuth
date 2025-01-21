@@ -126,6 +126,72 @@ function help_menu() {
     exit 0
 }
 
+# Parse arguments
+while [[ "$#" -gt 0 ]]; do
+  case $1 in
+    -u|--url)
+      TARGET="$2"
+      shift 2
+      ;;
+    -o|--output)
+      OUTPUT="$2"
+      shift 2
+      ;;
+    -w|--wordlist)
+      WORDLIST="$2"
+      shift 2
+      ;;
+    -t|--threads)
+      THREADS="$2"
+      shift 2
+      ;;
+    -a|--all)
+      RUN_ALL=true
+      shift
+      ;;
+    -h|--help)
+      banner
+      help_menu
+      ;;
+    --dns)
+      DNS_ENUM=true
+      shift
+      ;;
+    --subdomains)
+      SUBDOMAIN_ENUM=true
+      shift
+      ;;
+    --dirs)
+      DIR_ENUM=true
+      shift
+      ;;
+    --headers)
+      HEADERS_INSPECT=true
+      shift
+      ;;
+    --ports)
+      PORT_SCAN=true
+      shift
+      ;;
+    --ssl)
+      SSL_CHECK=true
+      shift
+      ;;
+    --whois)
+      WHOIS_LOOKUP=true
+      shift
+      ;;
+    --tech-stack)
+      TECH_STACK=true
+      shift
+      ;;
+    *)
+      echo -e "${RED}[ERROR] Unknown option: $1${NC}"
+      help_menu
+      ;;
+  esac
+done
+
 # Output handling function
 function output_result() {
     local message=$1
@@ -134,7 +200,7 @@ function output_result() {
     else
         echo -e "$message"
     fi
-    
+
     if $DEBUG; then
         echo -e "${YELLOW}[DEBUG] ${message}${NC}"
     fi
@@ -144,10 +210,10 @@ function output_result() {
 function dns_enum() {
     format_result "HEADER" "DNS Enumeration Module"
     show_progress 0.02 "Initializing DNS lookup"
-    
+
     printf "${WHITE}${BOLD}%-15s %-40s %-20s${NC}\n" "Record Type" "Value" "TTL"
     echo "═════════════════════════════════════════════════════════════════════════"
-    
+
     local record_types=("A" "AAAA" "MX" "TXT" "NS" "CNAME" "SOA")
     for type in "${record_types[@]}"; do
         local records=$(dig +noall +answer "$TARGET" "$type" 2>/dev/null)
@@ -156,199 +222,165 @@ function dns_enum() {
                 local value=$(echo "$record" | awk '{print $(NF)}')
                 local ttl=$(echo "$record" | awk '{print $2}')
                 printf "${CYAN}%-15s${NC} %-40s %-20s\n" "$type" "$value" "$ttl"
-            done <<< "$records"
+            done <<<"$records"
         fi
     done
-    
+
     format_result "SUCCESS" "DNS Enumeration completed"
 }
 
-# Subdomain Enumeration module
+# Subdomain enumeration module
 function subdomain_enum() {
-    format_result "HEADER" "Subdomain Enumeration Module"
-    
-    if [ ! -f "$WORDLIST" ]; then
-        format_result "ERROR" "Wordlist not found: $WORDLIST"
-        return
+    DEFAULT_WORDLIST="/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt"
+    if [ -z "$WORDLIST" ]; then
+        local wordlist="$DEFAULT_WORDLIST"
+    else
+        local wordlist="$WORDLIST"
     fi
-    
+
+    local target="$TARGET"
+
+    # Check if wordlist exists
+    if [[ ! -f "$wordlist" ]]; then
+        format_result "ERROR" "Wordlist not found: $wordlist"
+        return 1
+    fi
+
     show_progress 0.02 "Starting subdomain enumeration"
-    
+
     echo -e "\n${WHITE}${BOLD}Found Subdomains:${NC}"
     echo "════════════════════════════════════"
-    
-    while read -r subdomain; do
-        local domain="${subdomain}.$TARGET"
-        if host "$domain" &>/dev/null; then
-            local ip=$(dig +short "$domain")
-            if [ -n "$ip" ]; then
-                printf "${GREEN}%-40s${NC} → ${CYAN}%s${NC}\n" "$domain" "$ip"
-            fi
+
+    # Use a faster method for checking DNS resolution
+    while IFS= read -r subdomain; do
+        local domain="${subdomain}.${target}"
+
+        # Use `dig` with `+short` for faster IP resolution
+        ip=$(dig +short "$domain" 2>/dev/null)
+
+        # Only display if a valid IP is found
+        if [[ -n "$ip" ]]; then
+            printf "${GREEN}%-40s${NC} → ${CYAN}%s${NC}\n" "$domain" "$ip"
         fi
-    done < <(cat "$WORDLIST" | head -n 1000) # Limit for testing, remove limit in production
-    
+    done <"$wordlist"
+
     format_result "SUCCESS" "Subdomain enumeration completed"
 }
 
 # Directory Enumeration module
 function dir_enum() {
     format_result "HEADER" "Directory Enumeration Module"
-    
+
     if [ ! -f "$WORDLIST" ]; then
         format_result "ERROR" "Wordlist not found: $WORDLIST"
         return
     fi
-    
+
     show_progress 0.02 "Starting directory enumeration"
-    
+
     echo -e "\n${WHITE}${BOLD}Found Directories:${NC}"
     echo "════════════════════════════════════"
-    
+
     while read -r path; do
         local url="http://$TARGET/$path"
         local response=$(curl -s -w "%{http_code}" -o /dev/null --max-time "$TIMEOUT" "$url")
-        
+
         case $response in
-            200) printf "${GREEN}%-40s${NC} → ${WHITE}Found${NC}\n" "$url";;
-            403) printf "${YELLOW}%-40s${NC} → ${WHITE}Forbidden${NC}\n" "$url";;
-            301|302) printf "${CYAN}%-40s${NC} → ${WHITE}Redirect${NC}\n" "$url";;
+        200) printf "${GREEN}%-40s${NC} → ${WHITE}Found${NC}\n" "$url" ;;
+        403) printf "${YELLOW}%-40s${NC} → ${WHITE}Forbidden${NC}\n" "$url" ;;
+        301 | 302) printf "${CYAN}%-40s${NC} → ${WHITE}Redirect${NC}\n" "$url" ;;
         esac
     done < <(cat "$WORDLIST" | head -n 1000) # Limit for testing, remove limit in production
-    
+
     format_result "SUCCESS" "Directory enumeration completed"
 }
 
 # HTTP Headers Analysis module
 function headers_analysis() {
     format_result "HEADER" "HTTP Headers Analysis Module"
-    
+
     show_progress 0.02 "Retrieving HTTP headers"
-    
+
     local headers=$(curl -sI "http://$TARGET" --max-time "$TIMEOUT")
-    
+
     echo -e "\n${WHITE}${BOLD}HTTP Headers:${NC}"
     echo "════════════════════════════════════"
     echo "$headers"
-    
+
     format_result "SUCCESS" "HTTP Headers analysis completed"
 }
 
 # Port Scanning module
 function port_scan() {
     format_result "HEADER" "Port Scanning Module"
-    
+
     show_progress 0.02 "Scanning ports"
-    
+
     echo -e "\n${WHITE}${BOLD}Open Ports:${NC}"
     echo "════════════════════════════════════"
-    
+
     nmap -p- --open "$TARGET"
-    
+
     format_result "SUCCESS" "Port scanning completed"
 }
 
 # SSL/TLS Analysis module
 function ssl_analysis() {
     format_result "HEADER" "SSL/TLS Analysis Module"
-    
+
     show_progress 0.02 "Analyzing SSL/TLS"
-    
+
     openssl s_client -connect "$TARGET:443" -showcerts </dev/null
-    
+
     format_result "SUCCESS" "SSL/TLS analysis completed"
 }
 
 # WHOIS Lookup module
 function whois_lookup() {
     format_result "HEADER" "WHOIS Lookup Module"
-    
+
     show_progress 0.02 "Performing WHOIS lookup"
-    
+
     whois "$TARGET"
-    
+
     format_result "SUCCESS" "WHOIS lookup completed"
 }
 
 # Technology Stack Identification module
 function tech_stack() {
     format_result "HEADER" "Technology Stack Identification Module"
-    
+
     show_progress 0.02 "Identifying technology stack"
-    
+
     whatweb "$TARGET"
-    
+
     format_result "SUCCESS" "Technology stack identification completed"
 }
 
-# Main function to parse options
-function parse_options() {
-    while [[ "$1" =~ ^- ]]; do
-        case $1 in
-            -u|--url)
-                TARGET=$2
-                shift 2
-                ;;
-            -o|--output)
-                OUTPUT=$2
-                shift 2
-                ;;
-            -w|--wordlist)
-                WORDLIST=$2
-                shift 2
-                ;;
-            -t|--threads)
-                THREADS=$2
-                shift 2
-                ;;
-            -a|--all)
-                RUN_ALL=true
-                shift
-                ;;
-            --dns)
-                dns_enum
-                shift
-                ;;
-            --subdomains)
-                subdomain_enum
-                shift
-                ;;
-            --dirs)
-                dir_enum
-                shift
-                ;;
-            --headers)
-                headers_analysis
-                shift
-                ;;
-            --ports)
-                port_scan
-                shift
-                ;;
-            --ssl)
-                ssl_analysis
-                shift
-                ;;
-            --whois)
-                whois_lookup
-                shift
-                ;;
-            --tech-stack)
-                tech_stack
-                shift
-                ;;
-            -h|--help)
-                help_menu
-                shift
-                ;;
-            *)
-                echo -e "${RED}[ERROR] Unknown option: $1${NC}"
-                help_menu
-                ;;
-        esac
-    done
-}
 
 # Running the script
 check_requirements
 banner
-parse_options "$@"
+# Run all modules if -a/--all is specified
+if $RUN_ALL; then
+  DNS_ENUM=true
+  SUBDOMAIN_ENUM=true
+  DIR_ENUM=true
+  HEADERS_INSPECT=true
+  PORT_SCAN=true
+  SSL_CHECK=true
+  WHOIS_LOOKUP=true
+  TECH_STACK=true
+fi
+
+# Execute selected modules
+[ "$DNS_ENUM" == true ] && dns_enum
+[ "$SUBDOMAIN_ENUM" == true ] && subdomain_enum
+[ "$DIR_ENUM" == true ] && dir_enum
+[ "$HEADERS_INSPECT" == true ] && headers_inspect
+[ "$PORT_SCAN" == true ] && port_scan
+[ "$SSL_CHECK" == true ] && ssl_check
+[ "$WHOIS_LOOKUP" == true ] && whois_lookup
+[ "$TECH_STACK" == true ] && tech_stack
+
+output_result "\n${GREEN}[SUCCESS] WebReconX completed all selected modules.${NC}"
