@@ -1,3 +1,5 @@
+
+# <b> only dns enumeration and subdomain discovery is functional for now </b>
 # WebSleuth 🚀🌐
 **The Ultimate Website Reconnaissance Tool** 🕵️‍♂️💻
 
