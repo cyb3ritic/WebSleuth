@@ -13,19 +13,52 @@ fi
 REQUIRED_TOOLS=("dig" "curl" "nmap" "whois" "openssl" "whatweb")
 
 function check_requirements() {
+    echo -e "${BLUE}[INFO] Checking for required tools...${NC}"
+
     local missing_tools=()
     for tool in "${REQUIRED_TOOLS[@]}"; do
         if ! command -v "$tool" &> /dev/null; then
+            echo -e "${RED}[ERROR] Missing: $tool${NC}"
             missing_tools+=("$tool")
         fi
     done
-    
+
     if [ ${#missing_tools[@]} -ne 0 ]; then
-        echo -e "${RED}[ERROR] Missing required tools: ${missing_tools[*]}${NC}"
-        echo -e "${YELLOW}Please install them using: sudo apt-get install ${missing_tools[*]}${NC}"
-        exit 1
+        echo -e "\n${YELLOW}[WARNING] The following tools are missing:${NC}"
+        echo -e "${WHITE}${missing_tools[*]}${NC}"
+
+        # Detect OS and package manager
+        if command -v apt-get &> /dev/null; then
+            INSTALL_CMD="sudo apt-get install -y ${missing_tools[*]}"
+        elif command -v dnf &> /dev/null; then
+            INSTALL_CMD="sudo dnf install -y ${missing_tools[*]}"
+        elif command -v yum &> /dev/null; then
+            INSTALL_CMD="sudo yum install -y ${missing_tools[*]}"
+        elif command -v pacman &> /dev/null; then
+            INSTALL_CMD="sudo pacman -S --noconfirm ${missing_tools[*]}"
+        elif command -v brew &> /dev/null; then
+            INSTALL_CMD="brew install ${missing_tools[*]}"
+        else
+            echo -e "${RED}[ERROR] Unsupported package manager. Please install manually.${NC}"
+            exit 1
+        fi
+
+        # Ask user for permission to install missing tools
+        echo -ne "${CYAN}[PROMPT] Do you want to install the missing tools? (y/n): ${NC}"
+        read -r user_input
+        if [[ "$user_input" =~ ^[Yy]$ ]]; then
+            echo -e "${GREEN}[INFO] Installing missing tools...${NC}"
+            eval "$INSTALL_CMD"
+            echo -e "${GREEN}[SUCCESS] Installation completed.${NC}"
+        else
+            echo -e "${RED}[EXIT] Missing dependencies. Exiting...${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}[SUCCESS] All required tools are installed.${NC}\n"
     fi
 }
+
 
 # Enhanced color palette
 BOLD="\e[1m"
@@ -50,23 +83,6 @@ EXCLUDED_PORTS=""
 RUN_ALL=false
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# Progress bar function
-function show_progress() {
-    local duration=$1
-    local prefix=$2
-    local width=50
-    local fill="█"
-    local empty="░"
-    
-    for ((i = 0; i <= width; i++)); do
-        local percentage=$((i * 100 / width))
-        local filled=$((i * width / width))
-        local empty=$((width - filled))
-        printf "\r${prefix} [${GREEN}%${filled}s${NC}${RED}%${empty}s${NC}] ${WHITE}${percentage}%%${NC}" "" "" 
-        sleep "$duration"
-    done
-    echo
-}
 
 # Result formatting function
 function format_result() {
@@ -89,8 +105,8 @@ function banner() {
     local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     echo -e "${CYAN}${BOLD}"
     echo "════════════════════════════════════════════"
-    echo "           WebSleuth             "
-    echo "     Advanced Website Reconnaissance Tool    "
+    echo "              WebSleuth               "
+    echo "Advanced Website Reconnaissance Tool    "
     echo "════════════════════════════════════════════"
     echo -e "${WHITE}Started at: ${timestamp}${NC}\n"
 }
@@ -209,7 +225,6 @@ function output_result() {
 # DNS Enumeration module
 function dns_enum() {
     format_result "HEADER" "DNS Enumeration Module"
-    show_progress 0.02 "Initializing DNS lookup"
 
     printf "${WHITE}${BOLD}%-15s %-40s %-20s${NC}\n" "Record Type" "Value" "TTL"
     echo "═════════════════════════════════════════════════════════════════════════"
@@ -246,7 +261,6 @@ function subdomain_enum() {
         return 1
     fi
 
-    show_progress 0.02 "Starting subdomain enumeration"
 
     echo -e "\n${WHITE}${BOLD}Found Subdomains:${NC}"
     echo "════════════════════════════════════"
@@ -276,7 +290,6 @@ function dir_enum() {
         return
     fi
 
-    show_progress 0.02 "Starting directory enumeration"
 
     echo -e "\n${WHITE}${BOLD}Found Directories:${NC}"
     echo "════════════════════════════════════"
@@ -299,7 +312,6 @@ function dir_enum() {
 function headers_analysis() {
     format_result "HEADER" "HTTP Headers Analysis Module"
 
-    show_progress 0.02 "Retrieving HTTP headers"
 
     local headers=$(curl -sI "http://$TARGET" --max-time "$TIMEOUT")
 
@@ -314,7 +326,6 @@ function headers_analysis() {
 function port_scan() {
     format_result "HEADER" "Port Scanning Module"
 
-    show_progress 0.02 "Scanning ports"
 
     echo -e "\n${WHITE}${BOLD}Open Ports:${NC}"
     echo "════════════════════════════════════"
@@ -328,8 +339,6 @@ function port_scan() {
 function ssl_analysis() {
     format_result "HEADER" "SSL/TLS Analysis Module"
 
-    show_progress 0.02 "Analyzing SSL/TLS"
-
     openssl s_client -connect "$TARGET:443" -showcerts </dev/null
 
     format_result "SUCCESS" "SSL/TLS analysis completed"
@@ -339,7 +348,6 @@ function ssl_analysis() {
 function whois_lookup() {
     format_result "HEADER" "WHOIS Lookup Module"
 
-    show_progress 0.02 "Performing WHOIS lookup"
 
     whois "$TARGET"
 
@@ -350,7 +358,6 @@ function whois_lookup() {
 function tech_stack() {
     format_result "HEADER" "Technology Stack Identification Module"
 
-    show_progress 0.02 "Identifying technology stack"
 
     whatweb "$TARGET"
 
