@@ -264,15 +264,12 @@ function subdomain_enum() {
 }
 
 
-
-
-
 # HTTP Headers Analysis module
 function headers_analysis() {
     format_result "HEADER" "HTTP Headers Analysis Module"
 
 
-    local headers=$(curl -sI "http://$TARGET" --max-time "$TIMEOUT")
+    local headers=$(curl -sI "https://$TARGET" --max-time "$TIMEOUT")
 
     echo -e "\n${WHITE}${BOLD}HTTP Headers:${NC}"
     echo "════════════════════════════════════"
@@ -343,7 +340,7 @@ fi
 [ "$DNS_ENUM" == true ] && dns_enum
 [ "$SUBDOMAIN_ENUM" == true ] && subdomain_enum
 [ "$DIR_ENUM" == true ] && dir_enum
-[ "$HEADERS_INSPECT" == true ] && headers_inspect
+[ "$HEADERS_INSPECT" == true ] && headers_analysis
 [ "$PORT_SCAN" == true ] && port_scan
 [ "$SSL_CHECK" == true ] && ssl_check
 [ "$WHOIS_LOOKUP" == true ] && whois_lookup
