@@ -10,7 +10,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Required tools check
-REQUIRED_TOOLS=("dig" "curl" "nmap" "whois" "openssl" "whatweb")
+REQUIRED_TOOLS=("curl" "nmap" "whois" "openssl" "whatweb" "gobuster" "seclists")
 
 function check_requirements() {
     echo -e "${BLUE}[INFO] Checking for required tools...${NC}"
@@ -78,7 +78,6 @@ WORDLIST=""
 THREADS=10
 TIMEOUT=10
 DEBUG=false
-DEFAULT_WORDLIST="/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt"
 EXCLUDED_PORTS=""
 RUN_ALL=false
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -244,69 +243,29 @@ function dns_enum() {
     format_result "SUCCESS" "DNS Enumeration completed"
 }
 
-# Subdomain enumeration module
 function subdomain_enum() {
-    DEFAULT_WORDLIST="/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt"
-    if [ -z "$WORDLIST" ]; then
-        local wordlist="$DEFAULT_WORDLIST"
-    else
-        local wordlist="$WORDLIST"
-    fi
+    format_result "HEADER" "Subdomain Enumeration Module"
 
-    local target="$TARGET"
+    local wordlist="${WORDLIST:-/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt}"
 
-    # Check if wordlist exists
     if [[ ! -f "$wordlist" ]]; then
         format_result "ERROR" "Wordlist not found: $wordlist"
         return 1
     fi
 
+    echo -e "\n${WHITE}${BOLD}Found Subdomains (Real-Time):${NC}"
+    echo "═════════════════════════════════════════════"
 
-    echo -e "\n${WHITE}${BOLD}Found Subdomains:${NC}"
-    echo "════════════════════════════════════"
-
-    # Use a faster method for checking DNS resolution
-    while IFS= read -r subdomain; do
-        local domain="${subdomain}.${target}"
-
-        # Use `dig` with `+short` for faster IP resolution
-        ip=$(dig +short "$domain" 2>/dev/null)
-
-        # Only display if a valid IP is found
-        if [[ -n "$ip" ]]; then
-            printf "${GREEN}%-40s${NC} → ${CYAN}%s${NC}\n" "$domain" "$ip"
-        fi
-    done <"$wordlist"
+    gobuster dns -d "$TARGET" -w "$wordlist" -q | while read -r line; do
+        printf "${GREEN}%-40s${NC} → ${CYAN}Live${NC}\n" "$line"
+    done
 
     format_result "SUCCESS" "Subdomain enumeration completed"
 }
 
-# Directory Enumeration module
-function dir_enum() {
-    format_result "HEADER" "Directory Enumeration Module"
-
-    if [ ! -f "$WORDLIST" ]; then
-        format_result "ERROR" "Wordlist not found: $WORDLIST"
-        return
-    fi
 
 
-    echo -e "\n${WHITE}${BOLD}Found Directories:${NC}"
-    echo "════════════════════════════════════"
 
-    while read -r path; do
-        local url="http://$TARGET/$path"
-        local response=$(curl -s -w "%{http_code}" -o /dev/null --max-time "$TIMEOUT" "$url")
-
-        case $response in
-        200) printf "${GREEN}%-40s${NC} → ${WHITE}Found${NC}\n" "$url" ;;
-        403) printf "${YELLOW}%-40s${NC} → ${WHITE}Forbidden${NC}\n" "$url" ;;
-        301 | 302) printf "${CYAN}%-40s${NC} → ${WHITE}Redirect${NC}\n" "$url" ;;
-        esac
-    done < <(cat "$WORDLIST" | head -n 1000) # Limit for testing, remove limit in production
-
-    format_result "SUCCESS" "Directory enumeration completed"
-}
 
 # HTTP Headers Analysis module
 function headers_analysis() {
