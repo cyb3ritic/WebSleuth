@@ -316,7 +316,6 @@ function headers_analysis() {
 }
 
 
-
 # Port Scanning module
 function port_scan() {
     format_result "HEADER" "Port Scanning Module"
@@ -366,26 +365,28 @@ function port_scan() {
 }
 
 
-
-
-# SSL/TLS Analysis module
-function ssl_analysis() {
-    format_result "HEADER" "SSL/TLS Analysis Module"
-
-    openssl s_client -connect "$TARGET:443" -showcerts </dev/null
-
-    format_result "SUCCESS" "SSL/TLS analysis completed"
-}
-
 # WHOIS Lookup module
 function whois_lookup() {
     format_result "HEADER" "WHOIS Lookup Module"
 
+    echo -e "\n${WHITE}${BOLD}Performing WHOIS lookup for: $TARGET${NC}"
+    echo "═══════════════════════════════════════════════════════"
 
-    whois "$TARGET"
+    # Run WHOIS and extract only the relevant part
+    local whois_data=$(whois "$TARGET" 2>/dev/null | awk '/Domain Name:/,0')
+
+    # Check if we got valid data
+    if [[ -z "$whois_data" ]]; then
+        echo -e "${RED}No WHOIS information found.${NC}"
+    else
+        echo -e "$whois_data"
+    fi
 
     format_result "SUCCESS" "WHOIS lookup completed"
 }
+
+
+
 
 # Technology Stack Identification module
 function tech_stack() {
@@ -419,7 +420,7 @@ fi
 [ "$DIR_ENUM" == true ] && dir_enum
 [ "$HEADERS_INSPECT" == true ] && headers_analysis
 [ "$PORT_SCAN" == true ] && port_scan
-[ "$SSL_CHECK" == true ] && ssl_check
+[ "$SSL_CHECK" == true ] && ssl_analysis
 [ "$WHOIS_LOOKUP" == true ] && whois_lookup
 [ "$TECH_STACK" == true ] && tech_stack
 
