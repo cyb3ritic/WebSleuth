@@ -266,17 +266,56 @@ function subdomain_enum() {
 
 # HTTP Headers Analysis module
 function headers_analysis() {
-    format_result "HEADER" "HTTP Headers Analysis Module"
-
-
-    local headers=$(curl -sI "https://$TARGET" --max-time "$TIMEOUT")
-
-    echo -e "\n${WHITE}${BOLD}HTTP Headers:${NC}"
-    echo "════════════════════════════════════"
-    echo "$headers"
-
-    format_result "SUCCESS" "HTTP Headers analysis completed"
+    
+    echo -e "\n${BOLD}[HTTP Headers Analysis]${NC}"
+    
+    # Get headers
+    headers=$(curl -sI "https://$TARGET" --max-time "$TIMEOUT" 2>/dev/null)
+    if [ -z "$headers" ]; then
+        headers=$(curl -sI "http://$TARGET" --max-time "$TIMEOUT" 2>/dev/null)
+        [ -z "$headers" ] && echo -e "${RED}[-]${NC} Failed to retrieve headers" && return 1
+        echo -e "${YELLOW}[!]${NC} Using insecure HTTP"
+    fi
+    
+    # Display headers with enhanced formatting
+    local target=$TARGET
+    local width=$((${#target} + 20))
+    local border=$(printf '%*s' "$width" | tr ' ' '-')
+    
+    echo -e "${BLUE}${BOLD}$border${NC}"
+    echo -e "${BLUE}${BOLD}HTTP HEADERS: ${WHITE}$target${NC}"
+    echo -e "${BLUE}${BOLD}$border${NC}"
+    
+    # Process and display each header with formatting
+    echo "$headers" | while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            # Split header into name and value
+            if [[ "$line" == *":"* ]]; then
+                header_name=$(echo "$line" | cut -d: -f1)
+                header_value=$(echo "$line" | cut -d: -f2- | sed 's/^ //')
+                echo -e "${CYAN}${BOLD}$header_name:${NC} $header_value"
+            else
+                # For status line or other non-header lines
+                echo -e "${WHITE}${BOLD}$line${NC}"
+            fi
+        fi
+    done
+    
+    # Check security headers
+    echo -e "\n${WHITE}Security Headers Check:${NC}"
+    echo "═══════════════════════"
+    for header in "Strict-Transport-Security" "Content-Security-Policy" "X-Content-Type-Options" "X-Frame-Options"; do
+        if echo "$headers" | grep -qi "$header:"; then
+            echo -e "${GREEN}[+]${NC} $header: Present"
+        else
+            echo -e "${YELLOW}[!]${NC} $header: Missing"
+        fi
+    done
+    
+    echo -e "\n${GREEN}[+]${NC} Headers analysis completed"
 }
+
+
 
 # Port Scanning module
 function port_scan() {
@@ -346,4 +385,4 @@ fi
 [ "$WHOIS_LOOKUP" == true ] && whois_lookup
 [ "$TECH_STACK" == true ] && tech_stack
 
-output_result "\n${GREEN}[SUCCESS] WebReconX completed all selected modules.${NC}"
+output_result "\n${GREEN}[SUCCESS] WebSleuth completed all selected modules.${NC}"
