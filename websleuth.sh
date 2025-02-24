@@ -321,14 +321,52 @@ function headers_analysis() {
 function port_scan() {
     format_result "HEADER" "Port Scanning Module"
 
+    echo -e "\n${WHITE}${BOLD}Scanning target: $TARGET${NC}"
+    echo "═══════════════════════════════════════════════════════"
 
-    echo -e "\n${WHITE}${BOLD}Open Ports:${NC}"
-    echo "════════════════════════════════════"
+    # Choose scan type: Fast (100 common ports) or Full (All 65535 ports)
+    local scan_type="-F"  # Fast scan by default (100 common ports)
+    local scan_mode="Fast Scan (100 common ports)"
+    [[ "$FULL_SCAN" == "true" ]] && scan_type="-p-" && scan_mode="Full Scan (All Ports)"
 
-    nmap -p- --open "$TARGET"
+    echo -e "Scan Mode: $scan_mode\n"
+
+    # Run Nmap in verbose mode and show real-time output
+    nmap -v $scan_type --open -sV -T4 "$TARGET" 2>&1 | tee /tmp/nmap_scan_output
+
+    # Extract open ports from the stored output
+    local open_ports
+    open_ports=$(grep -E "^[0-9]+/tcp" /tmp/nmap_scan_output | grep "open")
+
+    # Check if any open ports were found
+    if [[ -z "$open_ports" ]]; then
+        echo -e "\n${RED}No open ports found.${NC}"
+    else
+        echo -e "\n${WHITE}${BOLD}Open Ports Summary:${NC}"
+        echo "═══════════════════════════════════════════════════════"
+        printf "%-10s %-10s %-15s %-30s\n" "Port" "State" "Service" "Version"
+        echo "-------------------------------------------------------"
+        echo "$open_ports" | awk '{printf "%-10s %-10s %-15s %-30s\n", $1, $2, $3, substr($0, index($0,$4))}'
+    fi
+
+    # Extract scan statistics
+    local total_ports=$(echo "$open_ports" | wc -l)
+    local scan_time=$(grep "Nmap done" /tmp/nmap_scan_output | awk -F' ' '{print $(NF-1), $NF}')
+    
+    # Summary
+    echo -e "\nScan Summary:"
+    echo "--------------------------------------------"
+    echo -e "Target: ${CYAN}$TARGET${NC}"
+    echo -e "Scan Mode: ${YELLOW}$scan_mode${NC}"
+    echo -e "Open Ports Found: ${WHITE}$total_ports${NC}"
+    echo -e "Scan Duration: ${WHITE}$scan_time${NC}"
+    echo -e "Scan Completed: $(date +'%Y-%m-%d %H:%M:%S')"
 
     format_result "SUCCESS" "Port scanning completed"
 }
+
+
+
 
 # SSL/TLS Analysis module
 function ssl_analysis() {
