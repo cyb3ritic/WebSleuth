@@ -264,6 +264,56 @@ function subdomain_enum() {
 }
 
 
+
+# Directory Enumeration
+function dir_enum() {
+    format_result "HEADER" "Directory Enumeration Module"
+
+    # Define default wordlist if not set, prioritize seclists if available
+    local wordlist="${WORDLIST:-/usr/share/wordlists/seclists/Discovery/Web-Content/raft-medium-directories.txt}" # More common, smaller default
+    if [[ ! -f "$wordlist" ]]; then
+        wordlist="${WORDLIST:-/usr/share/wordlists/dirb/common.txt}" # Fallback to dirb common
+    fi
+    if [[ ! -f "$wordlist" ]]; then
+        format_result "ERROR" "No suitable wordlist found.  Please provide one."
+        return 1
+    fi
+
+
+    echo -e "\n${WHITE}${BOLD}Starting Directory Enumeration for: $TARGET${NC}"
+    echo "════════════════════════════════════════════════════════"
+    echo -e "Using Wordlist: ${YELLOW}$wordlist${NC}"
+    echo ""
+
+    # Run ffuf (more modern and generally faster than feroxbuster for this task)
+    ffuf -u "$TARGET/FUZZ" -w "$wordlist" -c -fc 404,400,302 -recursion -o json 2>/dev/null | jq -r '.results[] | "\(.status) \(.method) \(.url)"' | while read -r line; do
+        status=$(echo "$line" | awk '{print $1}')
+        method=$(echo "$line" | awk '{print $2}')
+        url=$(echo "$line" | awk '{print $3}')
+
+        # Colorize Status Codes
+        case "$status" in
+            200) color="${GREEN}" ;;
+            301) color="${YELLOW}" ;; # Redirect
+            401|403) color="${RED}" ;; # Auth issues
+            *) color="${WHITE}" ;; # Everything else
+        esac
+        printf "${color}%-4s ${WHITE}%-7s %-60s${NC}\n" "$status" "$method" "$url"
+    done
+
+    echo -e "\n${WHITE}${BOLD}Directory Enumeration Summary:${NC}"
+    echo "════════════════════════════════════════════════════════"
+    echo -e "Target: ${CYAN}$TARGET${NC}"
+    echo -e "Wordlist Used: ${YELLOW}$wordlist${NC}"
+    echo -e "Scan Completed: $(date +'%Y-%m-%d %H:%M:%S')"
+
+    format_result "SUCCESS" "Directory enumeration completed"
+}
+
+
+
+
+
 # HTTP Headers Analysis module
 function headers_analysis() {
     
@@ -392,8 +442,17 @@ function whois_lookup() {
 function tech_stack() {
     format_result "HEADER" "Technology Stack Identification Module"
 
+    echo -e "\n${WHITE}${BOLD}Analyzing technology stack for: $TARGET${NC}"
+    echo "═══════════════════════════════════════════════════════"
 
-    whatweb "$TARGET"
+    # Run WhatWeb and capture structured output
+    local tech_data=$(whatweb --color=never "$TARGET" 2>/dev/null)
+
+    if [[ -z "$tech_data" ]]; then
+        echo -e "${RED}No technology data found.${NC}"
+    else
+        echo -e "${CYAN}$tech_data${NC}"
+    fi
 
     format_result "SUCCESS" "Technology stack identification completed"
 }
@@ -420,7 +479,6 @@ fi
 [ "$DIR_ENUM" == true ] && dir_enum
 [ "$HEADERS_INSPECT" == true ] && headers_analysis
 [ "$PORT_SCAN" == true ] && port_scan
-[ "$SSL_CHECK" == true ] && ssl_analysis
 [ "$WHOIS_LOOKUP" == true ] && whois_lookup
 [ "$TECH_STACK" == true ] && tech_stack
 
