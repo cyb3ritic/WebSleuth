@@ -32,20 +32,21 @@ function subdomain_enum() {
     fi
 
     echo -e "\e[1;35m[*] Subdomain Enumeration for: \e[1;36m$TARGET\e[0m"
-    echo -e "\e[1;34m[*] Using wordlist:\e[0m $current_wordlist"
-    echo -e "\n\e[1mFound Subdomains (Live Check):\e[0m"
-    echo "═════════════════════════════════════════════"
+        echo -e "\e[1;34m[*] Using wordlist:\e[0m $current_wordlist"
+        echo -e "\n\e[1mFound Subdomains (Live Check):\e[0m"
+        echo "═════════════════════════════════════════════"
 
-    gobuster dns -d "$TARGET" -w "$current_wordlist" -q 2>/dev/null | \
-    awk '{print $2}' | while read -r sub; do
-        if [[ -n "$sub" ]]; then
-            if dig +short "$sub" | grep -qE '^[0-9a-fA-F:.]+'; then
-                echo -e "\e[32m$sub\e[0m"
-            else
-                echo -e "\e[90m$sub (not live)\e[0m"
+        gobuster dns -d "$TARGET" -w "$current_wordlist" -q 2>/dev/null | \
+        while read -r line; do
+            sub=$(echo "$line" | awk '{print $2}')
+            if [[ -n "$sub" ]]; then
+                if dig +short "$sub" | grep -qE '^[0-9a-fA-F:.]+'; then
+                    echo -e "\e[32m$sub\e[0m"
+                else
+                    echo -e "\e[90m$sub (not live)\e[0m"
+                fi
             fi
-        fi
-    done
+        done
 
-    echo -e "\n\e[1;32m[+] Subdomain enumeration completed for $TARGET\e[0m"
+        echo -e "\n\e[1;32m[+] Subdomain enumeration completed for $TARGET\e[0m"
 }
